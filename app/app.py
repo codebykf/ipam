@@ -7,7 +7,7 @@ import os
 import re
 import sqlite3
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 
 from flask import Flask, Response, g, jsonify, request, send_from_directory
 
@@ -36,6 +36,14 @@ CREATE TABLE IF NOT EXISTS devices (
     ip        TEXT NOT NULL,
     notes     TEXT NOT NULL DEFAULT '',
     UNIQUE (subnet_id, ip)
+);
+CREATE TABLE IF NOT EXISTS changelog (
+    id         INTEGER PRIMARY KEY,
+    created_at TEXT NOT NULL,
+    action     TEXT NOT NULL,
+    entity     TEXT NOT NULL,
+    summary    TEXT NOT NULL,
+    details    TEXT NOT NULL DEFAULT ''
 );
 """
 
@@ -181,6 +189,40 @@ def subnet_dict(row, device_count=0):
     }
 
 
+# --- Changelog ------------------------------------------------------------------
+
+def log_change(db, action, entity, summary, details=""):
+    """Record a change. Call before commit so the entry is part of the same transaction."""
+    db.execute(
+        "INSERT INTO changelog (created_at, action, entity, summary, details) VALUES (?, ?, ?, ?, ?)",
+        (datetime.now(timezone.utc).isoformat(timespec="seconds"), action, entity, summary, details),
+    )
+
+
+def subnet_label(subnet):
+    country = get_db().execute("SELECT name FROM countries WHERE id = ?", (subnet["country_id"],)).fetchone()
+    return f"{country['name']} › {subnet['name']} ({subnet['cidr']})"
+
+
+def describe_changes(old, new, labels):
+    parts = []
+    for key, label in labels.items():
+        if str(old[key]) != str(new[key]):
+            parts.append(f"{label} changed" if key == "notes" else f"{label}: {old[key]} → {new[key]}")
+    return "; ".join(parts)
+
+
+@app.get("/api/changelog")
+def list_changelog():
+    limit = min(request.args.get("limit", 200, type=int), 1000)
+    before = request.args.get("before", type=int)
+    sql, params = "SELECT * FROM changelog", []
+    if before:
+        sql, params = sql + " WHERE id < ?", [before]
+    rows = get_db().execute(sql + " ORDER BY id DESC LIMIT ?", params + [limit + 1]).fetchall()
+    return jsonify(entries=[dict(r) for r in rows[:limit]], more=len(rows) > limit)
+
+
 # --- Pages ----------------------------------------------------------------------
 
 @app.get("/")
@@ -217,6 +259,7 @@ def create_country():
     db = get_db()
     try:
         cur = db.execute("INSERT INTO countries (name) VALUES (?)", (name,))
+        log_change(db, "added", "country", f"Country {name}")
         db.commit()
     except sqlite3.IntegrityError:
         raise ApiError(f"Country '{name}' already exists", 409)
@@ -225,11 +268,13 @@ def create_country():
 
 @app.put("/api/countries/<int:country_id>")
 def update_country(country_id):
-    get_country(country_id)
+    country = get_country(country_id)
     name = require_text(request.get_json(silent=True) or {}, "name", "Country name", 100)
     db = get_db()
     try:
         db.execute("UPDATE countries SET name = ? WHERE id = ?", (name, country_id))
+        if name != country["name"]:
+            log_change(db, "updated", "country", f"Country {country['name']} renamed to {name}")
         db.commit()
     except sqlite3.IntegrityError:
         raise ApiError(f"Country '{name}' already exists", 409)
@@ -238,9 +283,17 @@ def update_country(country_id):
 
 @app.delete("/api/countries/<int:country_id>")
 def delete_country(country_id):
-    get_country(country_id)
+    country = get_country(country_id)
     db = get_db()
+    subnets = db.execute("SELECT name, cidr FROM subnets WHERE country_id = ?", (country_id,)).fetchall()
+    devices = db.execute(
+        "SELECT COUNT(*) FROM devices d JOIN subnets s ON s.id = d.subnet_id WHERE s.country_id = ?", (country_id,)
+    ).fetchone()[0]
     db.execute("DELETE FROM countries WHERE id = ?", (country_id,))
+    log_change(
+        db, "deleted", "country", f"Country {country['name']} ({len(subnets)} subnet(s), {devices} device(s))",
+        "\n".join(f"{s['name']} ({s['cidr']})" for s in subnets),
+    )
     db.commit()
     return "", 204
 
@@ -257,6 +310,7 @@ def create_subnet(country_id):
             "INSERT INTO subnets (country_id, name, cidr, gateway) VALUES (?, ?, ?, ?)",
             (country_id, name, str(net), gateway),
         )
+        log_change(db, "added", "subnet", f"Subnet {get_country(country_id)['name']} › {name} ({net}), gateway {gateway}")
         db.commit()
     except sqlite3.IntegrityError:
         raise ApiError(f"{net} already exists in this country", 409)
@@ -280,6 +334,12 @@ def update_subnet(subnet_id):
             "UPDATE subnets SET name = ?, cidr = ?, gateway = ? WHERE id = ?",
             (name, str(net), gateway, subnet_id),
         )
+        diff = describe_changes(
+            subnet, {"name": name, "cidr": str(net), "gateway": gateway},
+            {"name": "name", "cidr": "CIDR", "gateway": "gateway"},
+        )
+        if diff:
+            log_change(db, "updated", "subnet", f"Subnet {subnet_label(subnet)}: {diff}")
         db.commit()
     except sqlite3.IntegrityError:
         raise ApiError(f"{net} already exists in this country", 409)
@@ -288,9 +348,15 @@ def update_subnet(subnet_id):
 
 @app.delete("/api/subnets/<int:subnet_id>")
 def delete_subnet(subnet_id):
-    get_subnet(subnet_id)
+    subnet = get_subnet(subnet_id)
     db = get_db()
+    label = subnet_label(subnet)
+    devices = db.execute("SELECT hostname, ip FROM devices WHERE subnet_id = ?", (subnet_id,)).fetchall()
     db.execute("DELETE FROM subnets WHERE id = ?", (subnet_id,))
+    log_change(
+        db, "deleted", "subnet", f"Subnet {label} ({len(devices)} device(s))",
+        "\n".join(f"{d['hostname']} ({d['ip']})" for d in sorted(devices, key=lambda d: ip_sort_key(d["ip"]))),
+    )
     db.commit()
     return "", 204
 
@@ -327,6 +393,7 @@ def create_device(subnet_id):
             "INSERT INTO devices (subnet_id, hostname, ip, notes) VALUES (?, ?, ?, ?)",
             (subnet_id, hostname, ip, notes),
         )
+        log_change(db, "added", "device", f"Device {hostname} ({ip}) in {subnet_label(subnet)}")
         db.commit()
     except sqlite3.IntegrityError:
         raise ApiError(f"{ip} is already assigned in this subnet", 409)
@@ -346,6 +413,12 @@ def update_device(device_id):
             "UPDATE devices SET hostname = ?, ip = ?, notes = ? WHERE id = ?",
             (hostname, ip, notes, device_id),
         )
+        diff = describe_changes(
+            row, {"hostname": hostname, "ip": ip, "notes": notes},
+            {"hostname": "hostname", "ip": "IP", "notes": "notes"},
+        )
+        if diff:
+            log_change(db, "updated", "device", f"Device {row['hostname']} ({row['ip']}) in {subnet_label(subnet)}: {diff}")
         db.commit()
     except sqlite3.IntegrityError:
         raise ApiError(f"{ip} is already assigned in this subnet", 409)
@@ -355,8 +428,12 @@ def update_device(device_id):
 @app.delete("/api/devices/<int:device_id>")
 def delete_device(device_id):
     db = get_db()
-    if db.execute("DELETE FROM devices WHERE id = ?", (device_id,)).rowcount == 0:
+    row = db.execute("SELECT * FROM devices WHERE id = ?", (device_id,)).fetchone()
+    if row is None:
         raise ApiError("Device not found", 404)
+    label = subnet_label(get_subnet(row["subnet_id"]))
+    db.execute("DELETE FROM devices WHERE id = ?", (device_id,))
+    log_change(db, "deleted", "device", f"Device {row['hostname']} ({row['ip']}) from {label}")
     db.commit()
     return "", 204
 
@@ -438,6 +515,13 @@ def import_devices(subnet_id):
 
     db.executemany("INSERT INTO devices (subnet_id, hostname, ip, notes) VALUES (?, ?, ?, ?)", inserts)
     db.executemany("UPDATE devices SET hostname = ?, notes = ? WHERE subnet_id = ? AND ip = ?", updates)
+    if inserts or updates:
+        counts = [f"{len(inserts)} device(s) added"] + ([f"{len(updates)} updated"] if updates else [])
+        lines = [f"Added {h} ({ip})" for _, h, ip, _ in inserts] + [f"Updated {h} ({ip})" for h, _, _, ip in updates]
+        log_change(
+            db, "imported", "device",
+            f"CSV import into {subnet_label(subnet)}: {', '.join(counts)}", "\n".join(lines),
+        )
     db.commit()
     return jsonify(imported=len(inserts), updated=len(updates), skipped=len(errors), errors=errors[:200])
 
@@ -563,6 +647,7 @@ def restore_db():
                 for table, cols in BACKUP_TABLES.items():
                     col_list = ", ".join(cols)
                     conn.execute(f"INSERT INTO {table} ({col_list}) SELECT {col_list} FROM src.{table}")
+                log_change(conn, "restored", "backup", f"Restored all data from backup file {upload.filename}")
                 conn.execute("COMMIT")
             except sqlite3.DatabaseError as exc:
                 conn.execute("ROLLBACK")

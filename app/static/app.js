@@ -11,6 +11,7 @@ const icons = {
   download: svg('<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>'),
   search: svg('<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>'),
   server: svg('<rect x="2" y="3" width="20" height="7" rx="2"/><rect x="2" y="14" width="20" height="7" rx="2"/><path d="M6 6.5h.01M6 17.5h.01"/>'),
+  history: svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'),
   globe: svg('<circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20"/>'),
 };
 
@@ -18,6 +19,9 @@ const state = {
   countries: [],
   expanded: new Set(loadExpanded()),
   selectedSubnetId: null,
+  view: null,
+  changelog: [],
+  changelogMore: false,
   devices: [],
   nextIp: null,
   filter: '',
@@ -193,8 +197,65 @@ function renderWelcome() {
   </div>`;
 }
 
+const CHANGE_LABELS = { added: 'Added', updated: 'Updated', deleted: 'Deleted', imported: 'Imported', restored: 'Restored' };
+
+function renderChangelog() {
+  const entries = state.changelog;
+  let body;
+  if (!entries.length) {
+    body = `<div class="empty">
+      <div class="empty-icon">${icons.history}</div>
+      <h3>No changes yet</h3>
+      <p>Everything added, changed or deleted from now on shows up here.</p>
+    </div>`;
+  } else {
+    const groups = new Map();
+    for (const e of entries) {
+      const day = new Date(e.created_at).toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      if (!groups.has(day)) groups.set(day, []);
+      groups.get(day).push(e);
+    }
+    body = [...groups].map(([day, items]) => `
+      <div class="log-day">${esc(day)}</div>
+      <ul class="log-list">
+        ${items.map((e) => `
+          <li class="log-entry">
+            <time datetime="${esc(e.created_at)}">${new Date(e.created_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</time>
+            <span class="log-action ${esc(e.action)}">${esc(CHANGE_LABELS[e.action] || e.action)}</span>
+            <div class="log-text">
+              ${esc(e.summary)}
+              ${e.details ? `<details><summary>Show details</summary><pre>${esc(e.details)}</pre></details>` : ''}
+            </div>
+          </li>`).join('')}
+      </ul>`).join('');
+    if (state.changelogMore) body += `<div class="log-more"><button class="btn" data-action="more-changelog">Load older changes</button></div>`;
+  }
+  return `<section class="card">
+    <div class="toolbar"><h2>Changelog</h2></div>
+    <div class="log-body">${body}</div>
+  </section>`;
+}
+
+async function loadChangelog(append = false) {
+  const before = append ? state.changelog.at(-1)?.id : null;
+  const data = await api(`/changelog${before ? `?before=${before}` : ''}`);
+  state.changelog = append ? state.changelog.concat(data.entries) : data.entries;
+  state.changelogMore = data.more;
+  if (state.view === 'changelog') renderMain();
+}
+
+async function showChangelog() {
+  state.view = 'changelog';
+  state.selectedSubnetId = null;
+  state.devices = [];
+  history.replaceState(null, '', '#changelog');
+  renderSidebar();
+  await loadChangelog();
+}
+
 function renderMain() {
   const main = $('#main');
+  if (state.view === 'changelog') { main.innerHTML = renderChangelog(); return; }
   const found = state.selectedSubnetId && findSubnet(state.selectedSubnetId);
   if (!found) { main.innerHTML = renderWelcome(); return; }
 
@@ -299,15 +360,18 @@ async function refresh() {
   await loadTree();
   renderMain();
   await loadDevices();
+  if (state.view === 'changelog') await loadChangelog();
 }
 
 function selectNone() {
+  state.view = null;
   state.selectedSubnetId = null;
   state.devices = [];
   history.replaceState(null, '', location.pathname);
 }
 
 async function selectSubnet(id) {
+  state.view = null;
   state.selectedSubnetId = id;
   state.devices = [];
   state.filter = '';
@@ -449,6 +513,10 @@ const actions = {
   'import-csv': () => openImport(),
 
   'restore-db': () => openRestore(),
+
+  'show-changelog': () => showChangelog(),
+
+  'more-changelog': () => loadChangelog(true),
 };
 
 function dropzoneHtml(accept, label) {
@@ -597,6 +665,7 @@ document.addEventListener('click', (e) => {
     await loadTree();
     const m = location.hash.match(/^#subnet-(\d+)$/);
     if (m && findSubnet(Number(m[1]))) await selectSubnet(Number(m[1]));
+    else if (location.hash === '#changelog') await showChangelog();
     else renderMain();
   } catch (err) {
     toast(err.message, 'error');
