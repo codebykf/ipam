@@ -1,0 +1,5 @@
+hostname,ip,notes
+core-switch-01,10.0.0.2,"Rack A, U12"
+ap-lobby,10.0.0.20,Ubiquiti U6 Pro
+printer-2f,10.0.0.50,
+nas-01,10.0.0.100,Synology DS920+ — backups
