@@ -1,6 +1,6 @@
 # IP Inventory
 
-A small web app for recording devices by **country → subnet → device**.
+A small self-hosted web app for recording devices by **country → subnet → device**.
 
 - Add countries with the **+** button in the sidebar
 - Add subnets to a country (name, CIDR block, gateway). The gateway must sit inside the CIDR block
