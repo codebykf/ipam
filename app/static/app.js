@@ -25,6 +25,7 @@ const state = {
   devices: [],
   nextIp: null,
   filter: '',
+  flashDeviceId: null,
 };
 
 // ---------- Helpers ----------
@@ -327,7 +328,7 @@ function renderDevices() {
     return;
   }
   tbody.innerHTML = rows.map((d) => `
-    <tr>
+    <tr data-device-id="${d.id}">
       <td class="hostname">${esc(d.hostname)}</td>
       <td class="ip">${esc(d.ip)}${d.ip === gateway ? '<span class="tag">Gateway</span>' : ''}</td>
       <td class="notes">${d.notes ? esc(d.notes) : '<span class="muted">—</span>'}</td>
@@ -336,6 +337,12 @@ function renderDevices() {
         <button class="icon-btn danger" data-action="delete-device" data-id="${d.id}" title="Delete">${icons.trash}</button>
       </td>
     </tr>`).join('');
+
+  if (state.flashDeviceId) {
+    const row = tbody.querySelector(`[data-device-id="${state.flashDeviceId}"]`);
+    state.flashDeviceId = null;
+    if (row) { row.classList.add('flash'); row.scrollIntoView({ block: 'center', behavior: 'smooth' }); }
+  }
 }
 
 // ---------- Data loading ----------
@@ -656,6 +663,102 @@ document.addEventListener('click', (e) => {
   if (!fn) return;
   e.preventDefault();
   Promise.resolve(fn(Number(el.dataset.id))).catch((err) => toast(err.message, 'error'));
+});
+
+// ---------- Global search ----------
+
+const searchInput = $('#global-search');
+const searchResults = $('#global-results');
+let searchHits = [];
+let searchActive = -1;
+let searchSeq = 0;
+let searchTimer;
+
+function highlight(text, q) {
+  const i = text.toLowerCase().indexOf(q.toLowerCase());
+  if (i < 0) return esc(text);
+  return `${esc(text.slice(0, i))}<mark>${esc(text.slice(i, i + q.length))}</mark>${esc(text.slice(i + q.length))}`;
+}
+
+function showSearchResults(show) {
+  searchResults.hidden = !show;
+  searchInput.setAttribute('aria-expanded', show);
+}
+
+function renderSearchResults() {
+  const q = searchInput.value.trim();
+  searchResults.innerHTML = searchHits.length
+    ? searchHits.map((h, i) => `
+      <li role="option" id="hit-${i}" data-index="${i}" aria-selected="${i === searchActive}">
+        <div class="hit-top"><span class="hit-name">${highlight(h.hostname, q)}</span><span class="hit-ip">${highlight(h.ip, q)}</span></div>
+        <div class="hit-where">${esc(h.country_name)} › ${esc(h.subnet_name)} · ${esc(h.cidr)}</div>
+      </li>`).join('')
+    : `<li class="hit-empty">No devices match “${esc(q)}”</li>`;
+  searchInput.setAttribute('aria-activedescendant', searchActive >= 0 ? `hit-${searchActive}` : '');
+  $(`#hit-${searchActive}`, searchResults)?.scrollIntoView({ block: 'nearest' });
+  showSearchResults(true);
+}
+
+async function runSearch() {
+  const q = searchInput.value.trim();
+  const seq = ++searchSeq;
+  if (!q) { searchHits = []; showSearchResults(false); return; }
+  const hits = await api(`/search?q=${encodeURIComponent(q)}`);
+  if (seq !== searchSeq) return;
+  searchHits = hits;
+  searchActive = hits.length ? 0 : -1;
+  renderSearchResults();
+}
+
+async function goToHit(i) {
+  const hit = searchHits[i];
+  if (!hit) return;
+  searchInput.value = '';
+  searchHits = [];
+  showSearchResults(false);
+  searchInput.blur();
+  state.flashDeviceId = hit.id;
+  if (!findSubnet(hit.subnet_id)) await loadTree();
+  await selectSubnet(hit.subnet_id);
+}
+
+searchInput.addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => runSearch().catch((err) => toast(err.message, 'error')), 150);
+});
+
+searchInput.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    if (!searchHits.length) return;
+    e.preventDefault();
+    const step = e.key === 'ArrowDown' ? 1 : -1;
+    searchActive = (searchActive + step + searchHits.length) % searchHits.length;
+    renderSearchResults();
+  } else if (e.key === 'Enter') {
+    e.preventDefault();
+    goToHit(searchActive).catch((err) => toast(err.message, 'error'));
+  } else if (e.key === 'Escape' && !searchResults.hidden) {
+    e.preventDefault();
+    showSearchResults(false);
+  }
+});
+
+searchInput.addEventListener('focus', () => { if (searchInput.value.trim() && searchResults.innerHTML) showSearchResults(true); });
+
+// mousedown rather than click, so the input keeps focus until we navigate
+searchResults.addEventListener('mousedown', (e) => {
+  const li = e.target.closest('[data-index]');
+  e.preventDefault();
+  if (li) goToHit(Number(li.dataset.index)).catch((err) => toast(err.message, 'error'));
+});
+
+document.addEventListener('mousedown', (e) => { if (!e.target.closest('.global-search')) showSearchResults(false); });
+
+// "/" jumps to the search box from anywhere that isn't already a text field
+document.addEventListener('keydown', (e) => {
+  if (e.key !== '/' || e.target.closest('input, textarea, select, [contenteditable]') || modal.open) return;
+  e.preventDefault();
+  searchInput.focus();
 });
 
 // ---------- Start ----------

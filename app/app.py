@@ -438,6 +438,24 @@ def delete_device(device_id):
     return "", 204
 
 
+@app.get("/api/search")
+def search_devices():
+    """Find devices by hostname or IP across every subnet, for the header search box."""
+    q = request.args.get("q", "").strip()
+    if not q:
+        return jsonify([])
+    pattern = "%" + re.sub(r"([\\%_])", r"\\\1", q) + "%"
+    rows = get_db().execute(
+        "SELECT d.id, d.hostname, d.ip, d.subnet_id, s.name AS subnet_name, s.cidr, c.name AS country_name "
+        "FROM devices d JOIN subnets s ON s.id = d.subnet_id JOIN countries c ON c.id = s.country_id "
+        "WHERE d.hostname LIKE ? ESCAPE '\\' OR d.ip LIKE ? ESCAPE '\\' "
+        "ORDER BY (d.ip = ? OR d.hostname = ? COLLATE NOCASE) DESC, d.hostname COLLATE NOCASE "
+        "LIMIT 20",
+        (pattern, pattern, q, q),
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
 # --- CSV import / export -------------------------------------------------------------
 
 def read_csv_rows(upload):

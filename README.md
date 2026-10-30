@@ -54,7 +54,7 @@ Backup files are standard SQLite databases, so you can open them with any SQLite
 
 ## Logo
 
-The header shows `app/static/logo.svg`, centred. Replace that file with your own logo and rebuild (`docker compose up -d --build`). The header is red, so use a white or transparent-background version. To use a PNG instead, change the `src` in `app/static/index.html`.
+The header shows `app/static/logo.svg` on the left, next to the app name. Replace that file with your own logo and rebuild (`docker compose up -d --build`). The header is red, so use a white or transparent-background version. To use a PNG instead, change the `src` in `app/static/index.html`.
 
 ## CSV import
 
