@@ -1,16 +1,16 @@
 # IP Inventory
 
-A small self-hosted web app for recording devices by **country → subnet → device**.
+A small self-hosted web app for recording devices by **location → subnet → device**.
 
 ## Features
 
-- **Countries**: add them with the **+** button in the sidebar. Click a country to expand its subnets.
-- **Subnets**: add them to a country with a name, CIDR block and gateway. The gateway must sit inside the CIDR block. A subnet's page shows its CIDR, gateway, and how many of its usable addresses are taken.
+- **Locations**: add them with the **+** button in the sidebar (for example a country, site or office). Click a location to expand its subnets.
+- **Subnets**: add them to a location with a name, CIDR block and gateway. The gateway must sit inside the CIDR block. A subnet's page shows its CIDR, gateway, and how many of its usable addresses are taken.
 - **Devices**: add them to a subnet with a hostname, IP address and notes. The IP must sit inside the subnet and can only be used once per subnet. **Add device** suggests the next free IP.
-- **Search in the header**: type part of a device name or IP to search every country and subnet. Results show where each device lives (`Country › Subnet · CIDR`). Clicking one, or pressing Enter, opens its subnet and briefly highlights the device. Use the arrow keys to move through results, Escape to close them, and press `/` anywhere to jump to the search box.
+- **Search in the header**: type part of a device name or IP to search every location and subnet. Results show where each device lives (`Location › Subnet · CIDR`). Clicking one, or pressing Enter, opens its subnet and briefly highlights the device. Use the arrow keys to move through results, Escape to close them, and press `/` anywhere to jump to the search box.
 - **Search devices**: on a subnet's page, filter its devices by hostname, IP or notes.
 - **CSV import and export**: import many devices into a subnet from a CSV, or export a subnet's devices to CSV (see [CSV import](#csv-import)).
-- **Changelog**: click **Changelog** at the bottom of the sidebar to see every country, subnet and device that was added, changed or deleted, plus CSV imports and restores, grouped by day. It shows 200 entries at a time, with **Load older changes** at the bottom.
+- **Changelog**: click **Changelog** at the bottom of the sidebar to see every location, subnet and device that was added, changed or deleted, plus CSV imports and restores, grouped by day. It shows 200 entries at a time, with **Load older changes** at the bottom.
 - **Backup and restore**: from the bottom of the sidebar (see [Data & backups](#data--backups)).
 
 ## Run
@@ -87,6 +87,10 @@ To use your own logo, replace `app/static/logo.svg` with a white or transparent-
 - In `app/static/style.css`, `.logo` sets the displayed height (36px for the placeholder). A wide wordmark usually looks best at about 28px.
 
 To use a PNG instead, change the `src` in `app/static/index.html`.
+
+## Note for developers
+
+Locations used to be called countries, and the code still uses that name internally: the `countries` database table, the `/api/countries` endpoints and the `country` changelog entity. Only the wording people see changed, so existing databases and backups work without any migration.
 
 ## Run without Docker (development)
 

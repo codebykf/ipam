@@ -1,4 +1,8 @@
-"""IP Inventory — a small web app for tracking devices by country and subnet."""
+"""IP Inventory — a small web app for tracking devices by location and subnet.
+
+Locations are stored in the `countries` table and served under /api/countries; only the
+user-facing wording says "location", so existing databases and backups need no migration.
+"""
 
 import csv
 import io
@@ -165,7 +169,7 @@ def ip_sort_key(ip):
 def get_country(country_id):
     row = get_db().execute("SELECT * FROM countries WHERE id = ?", (country_id,)).fetchone()
     if row is None:
-        raise ApiError("Country not found", 404)
+        raise ApiError("Location not found", 404)
     return row
 
 
@@ -230,7 +234,7 @@ def index():
     return send_from_directory(app.static_folder, "index.html")
 
 
-# --- Countries ------------------------------------------------------------------
+# --- Locations (the countries table) --------------------------------------------
 
 @app.get("/api/countries")
 def list_countries():
@@ -255,29 +259,29 @@ def list_countries():
 
 @app.post("/api/countries")
 def create_country():
-    name = require_text(request.get_json(silent=True) or {}, "name", "Country name", 100)
+    name = require_text(request.get_json(silent=True) or {}, "name", "Location name", 100)
     db = get_db()
     try:
         cur = db.execute("INSERT INTO countries (name) VALUES (?)", (name,))
-        log_change(db, "added", "country", f"Country {name}")
+        log_change(db, "added", "country", f"Location {name}")
         db.commit()
     except sqlite3.IntegrityError:
-        raise ApiError(f"Country '{name}' already exists", 409)
+        raise ApiError(f"Location '{name}' already exists", 409)
     return jsonify(id=cur.lastrowid, name=name), 201
 
 
 @app.put("/api/countries/<int:country_id>")
 def update_country(country_id):
     country = get_country(country_id)
-    name = require_text(request.get_json(silent=True) or {}, "name", "Country name", 100)
+    name = require_text(request.get_json(silent=True) or {}, "name", "Location name", 100)
     db = get_db()
     try:
         db.execute("UPDATE countries SET name = ? WHERE id = ?", (name, country_id))
         if name != country["name"]:
-            log_change(db, "updated", "country", f"Country {country['name']} renamed to {name}")
+            log_change(db, "updated", "country", f"Location {country['name']} renamed to {name}")
         db.commit()
     except sqlite3.IntegrityError:
-        raise ApiError(f"Country '{name}' already exists", 409)
+        raise ApiError(f"Location '{name}' already exists", 409)
     return jsonify(id=country_id, name=name)
 
 
@@ -291,7 +295,7 @@ def delete_country(country_id):
     ).fetchone()[0]
     db.execute("DELETE FROM countries WHERE id = ?", (country_id,))
     log_change(
-        db, "deleted", "country", f"Country {country['name']} ({len(subnets)} subnet(s), {devices} device(s))",
+        db, "deleted", "country", f"Location {country['name']} ({len(subnets)} subnet(s), {devices} device(s))",
         "\n".join(f"{s['name']} ({s['cidr']})" for s in subnets),
     )
     db.commit()
@@ -313,7 +317,7 @@ def create_subnet(country_id):
         log_change(db, "added", "subnet", f"Subnet {get_country(country_id)['name']} › {name} ({net}), gateway {gateway}")
         db.commit()
     except sqlite3.IntegrityError:
-        raise ApiError(f"{net} already exists in this country", 409)
+        raise ApiError(f"{net} already exists in this location", 409)
     return jsonify(subnet_dict(get_subnet(cur.lastrowid))), 201
 
 
@@ -342,7 +346,7 @@ def update_subnet(subnet_id):
             log_change(db, "updated", "subnet", f"Subnet {subnet_label(subnet)}: {diff}")
         db.commit()
     except sqlite3.IntegrityError:
-        raise ApiError(f"{net} already exists in this country", 409)
+        raise ApiError(f"{net} already exists in this location", 409)
     return jsonify(subnet_dict(get_subnet(subnet["id"])))
 
 

@@ -144,7 +144,7 @@ function confirmDialog({ title, message, confirmLabel = 'Delete', onConfirm }) {
 function renderSidebar() {
   const list = $('#country-list');
   if (!state.countries.length) {
-    list.innerHTML = '<li class="sidebar-empty">No countries yet.<br>Click <b>+</b> to add one.</li>';
+    list.innerHTML = '<li class="sidebar-empty">No locations yet.<br>Click <b>+</b> to add one.</li>';
     return;
   }
   list.innerHTML = state.countries.map((c) => `
@@ -178,9 +178,9 @@ function renderWelcome() {
     return `<div class="card welcome">
       <div class="empty-icon">${icons.globe}</div>
       <h1>Welcome to IP Inventory</h1>
-      <p>Start by adding a country, then create subnets inside it and record the devices on each one.
+      <p>Start by adding a location, then create subnets inside it and record the devices on each one.
         Or, if you have a backup, restore it to pick up where you left off.</p>
-      <button class="btn primary" data-action="add-country">${icons.plus} Add country</button>
+      <button class="btn primary" data-action="add-country">${icons.plus} Add location</button>
       <button class="btn" data-action="restore-db">${icons.upload} Restore from backup</button>
     </div>`;
   }
@@ -191,7 +191,7 @@ function renderWelcome() {
     <h1>Select a subnet</h1>
     <p>Choose a subnet from the sidebar to view and manage its devices.</p>
     <div class="stats">
-      ${stat('Countries', state.countries.length)}
+      ${stat('Locations', state.countries.length)}
       ${stat('Subnets', subnets.length)}
       ${stat('Devices', devices)}
     </div>
@@ -418,9 +418,9 @@ const actions = {
   },
 
   'add-country': () => openForm({
-    title: 'Add country',
-    fields: [{ name: 'name', label: 'Country name', placeholder: 'e.g. United Kingdom', required: true }],
-    submitLabel: 'Add country',
+    title: 'Add location',
+    fields: [{ name: 'name', label: 'Location name', placeholder: 'e.g. United Kingdom or London office', required: true }],
+    submitLabel: 'Add location',
     onSubmit: async (v) => {
       const c = await api('/countries', { method: 'POST', body: v });
       state.expanded.add(c.id);
@@ -433,9 +433,9 @@ const actions = {
   'edit-country': (id) => {
     const c = state.countries.find((x) => x.id === id);
     openForm({
-      title: 'Rename country',
-      fields: [{ name: 'name', label: 'Country name', value: c.name, required: true }],
-      onSubmit: async (v) => { await api(`/countries/${id}`, { method: 'PUT', body: v }); await refresh(); toast('Country renamed'); },
+      title: 'Rename location',
+      fields: [{ name: 'name', label: 'Location name', value: c.name, required: true }],
+      onSubmit: async (v) => { await api(`/countries/${id}`, { method: 'PUT', body: v }); await refresh(); toast('Location renamed'); },
     });
   },
 
@@ -445,7 +445,7 @@ const actions = {
     confirmDialog({
       title: `Delete ${c.name}?`,
       message: `This permanently deletes <b>${esc(c.name)}</b>, its ${c.subnets.length} subnet(s) and ${devices} device(s).`,
-      onConfirm: async () => { await api(`/countries/${id}`, { method: 'DELETE' }); state.expanded.delete(id); await refresh(); toast('Country deleted'); },
+      onConfirm: async () => { await api(`/countries/${id}`, { method: 'DELETE' }); state.expanded.delete(id); await refresh(); toast('Location deleted'); },
     });
   },
 
@@ -559,7 +559,7 @@ function openRestore() {
     <form class="modal" novalidate>
       <header class="modal-header"><h2>Restore from backup</h2><p>Upload a <code>.db</code> file created with <b>Download backup</b>.</p></header>
       <div class="modal-body">
-        ${hasData ? `<div class="warning"><b>This replaces everything.</b> All current countries, subnets and devices will be overwritten.
+        ${hasData ? `<div class="warning"><b>This replaces everything.</b> All current locations, subnets and devices will be overwritten.
           A copy of the current data is saved to <code>data/backups/</code> first.</div>` : ''}
         ${dropzoneHtml('.db,.sqlite,.sqlite3', 'Choose a backup file')}
         ${hasData ? '<label class="check"><input type="checkbox" name="confirm"> I understand all current data will be replaced</label>' : ''}
@@ -591,7 +591,7 @@ function openRestore() {
         saveExpanded();
         await refresh();
         closeModal();
-        toast(`Restored ${r.countries} countries, ${r.subnets} subnets, ${r.devices} devices`);
+        toast(`Restored ${r.countries} locations, ${r.subnets} subnets, ${r.devices} devices`);
       } catch (err) {
         errEl.textContent = err.message;
         errEl.hidden = false;
