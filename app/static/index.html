@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>IP Inventory</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23cd0000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><rect x='2' y='3' width='20' height='7' rx='2'/><rect x='2' y='14' width='20' height='7' rx='2'/><path d='M6 6.5h.01M6 17.5h.01'/></svg>">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/">
+      <img src="logo.svg" alt="Company Logo" class="logo" width="160" height="36">
+      <h1>IP Inventory</h1>
+    </a>
+    <div class="global-search" role="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+      <input id="global-search" type="search" placeholder="Search by name or IP" autocomplete="off" spellcheck="false"
+             role="combobox" aria-expanded="false" aria-controls="global-results" aria-label="Search devices by name or IP">
+      <ul id="global-results" class="global-results" role="listbox" hidden></ul>
+    </div>
+  </header>
+
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="sidebar-head">
+        <span>Locations</span>
+        <button class="icon-btn add" data-action="add-country" title="Add location" aria-label="Add location">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
+      <ul id="country-list" class="country-list"></ul>
+      <div class="sidebar-foot">
+        <button class="btn ghost" data-action="show-changelog" title="See everything that was added, changed or deleted">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          Changelog
+        </button>
+        <a class="btn ghost" href="/api/backup" title="Download a copy of the database">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+          Download backup
+        </a>
+        <button class="btn ghost" data-action="restore-db" title="Replace all data with a backup file">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+          Restore backup
+        </button>
+      </div>
+    </aside>
+
+    <main id="main" class="main"></main>
+  </div>
+
+  <dialog id="modal"></dialog>
+  <div id="toasts" class="toasts"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>

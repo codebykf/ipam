@@ -1,0 +1,9 @@
+services:
+  ip-inventory:
+    build: .
+    container_name: ip-inventory
+    ports:
+      - "8080:8000"
+    volumes:
+      - ./data:/data
+    restart: unless-stopped
